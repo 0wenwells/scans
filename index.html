@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Scan Gallery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: header strip, then a square grid of scan cards on a faint measuring grid; viewer opens full-screen */
+:root{
+  --ground:#0f1112; --panel:#171a1c; --line:#2a2f33; --grid:#181c1f;
+  --ink:#e8eaec; --muted:#8a939b; --accent:#ffd400; --warn:#ffb020;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--ground);color:var(--ink);font:14px/1.5 var(--sans);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:32px 32px}
+[hidden]{display:none!important}
+button,input{font:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.wrap{max-width:1280px;margin:0 auto;padding-inline:16px}
+header{border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--ground) 92%,transparent)}
+header .wrap{display:flex;flex-wrap:wrap;align-items:end;gap:12px 24px;padding-block:28px 18px}
+h1{margin:0;font:600 clamp(26px,4vw,40px)/1.05 var(--sans);letter-spacing:-.01em;text-wrap:balance}
+.meta{font:500 11px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.spacer{flex:1}
+.tool{font:500 12px/1 var(--sans);color:var(--ink);background:transparent;border:1px solid var(--line);padding:9px 12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.tool:hover{border-color:var(--muted)}
+.tool[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+
+#how{border-bottom:1px solid var(--line);background:var(--panel)}
+#how .wrap{padding-block:18px;display:grid;gap:10px;max-width:760px;margin-left:max(16px,calc((100vw - 1280px)/2 + 16px))}
+#how h2{margin:0;font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+#how ol{margin:0;padding-left:1.3em;display:grid;gap:6px}
+#how code{font:12px/1 var(--mono);background:var(--ground);border:1px solid var(--line);padding:2px 5px}
+
+main .wrap{padding-block:24px 48px}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(160px,100%),1fr));gap:16px}
+.card{display:grid;grid-template-rows:auto auto;background:var(--panel);border:1px solid var(--line);cursor:pointer;text-align:left;color:var(--ink);padding:0;min-width:0}
+.card:hover{border-color:var(--muted)}
+.thumb{aspect-ratio:1;max-width:100%;display:grid;place-items:center;background:#0b0d0e;position:relative;overflow:hidden}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .state{font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.thumb .state.bad{color:var(--warn)}
+.cap{padding:10px 12px;display:grid;gap:2px;min-width:0}
+.cap b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cap span{font:400 11px/1.3 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+#empty{border:1px dashed var(--line);padding:32px;color:var(--muted);max-width:40rem}
+#empty b{color:var(--ink)}
+
+#viewer{position:fixed;inset:0;background:var(--ground);display:flex;flex-direction:column;z-index:10}
+#viewer .bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+#vTitle{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#vInfo{font:400 11px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+#vStage{position:relative;flex:1;min-height:0}
+#vCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#vMsg{position:absolute;inset:0;display:grid;place-items:center;font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);pointer-events:none}
+#vHint{position:absolute;left:16px;bottom:calc(12px + env(safe-area-inset-bottom,0px));font:400 11px/1 var(--mono);color:var(--muted)}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div>
+      <div class="meta" id="count">Loading scans…</div>
+      <h1 id="title">Scan Gallery</h1>
+    </div>
+    <div class="spacer"></div>
+    <button class="tool" id="howBtn" aria-expanded="false" aria-controls="how">How to add a scan</button>
+    <button class="tool" id="checkBtn" title="Open an OBJ from your computer to check it before uploading">Check my file</button>
+    <input type="file" id="checkFile" accept=".obj" hidden>
+  </div>
+</header>
+
+<section id="how" hidden>
+  <div class="wrap">
+    <h2>How to add a scan</h2>
+    <ol>
+      <li>Export your scan as <b>OBJ</b>. If your app also gives you an <code>.mtl</code> file and images, keep them together.</li>
+      <li>Name it <code>yourname-title</code>, e.g. <code>maya-stairwell.obj</code>. Keep files under 25 MB each.</li>
+      <li>Open the repository on GitHub, go into the <code>models</code> folder, then <b>Add file → Upload files</b>.
+          For a scan with textures, put all its files in a new folder of their own, e.g. <code>models/maya-stairwell/</code>.</li>
+      <li>Click <b>Commit changes</b>. Your scan appears here within a couple of minutes.</li>
+    </ol>
+    <p class="meta" style="margin:0">Use "Check my file" first to see your scan the way the gallery will show it.</p>
+  </div>
+</section>
+
+<main>
+  <div class="wrap">
+    <div id="grid"></div>
+    <div id="empty" hidden></div>
+  </div>
+</main>
+
+<div id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="vTitle">
+  <div class="bar">
+    <span id="vTitle"></span>
+    <span id="vInfo"></span>
+    <span class="spacer"></span>
+    <button class="tool" id="upBtn" title="Scanning apps disagree about which way is up">Up: Y</button>
+    <button class="tool" id="spinBtn" aria-pressed="true">Turntable</button>
+    <a class="tool" id="dlBtn" download>Download</a>
+    <button class="tool" id="closeBtn">Close</button>
+  </div>
+  <div id="vStage">
+    <canvas id="vCanvas"></canvas>
+    <div id="vMsg"></div>
+    <div id="vHint">Drag to turn · scroll or pinch to zoom · right-drag to move</div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
+import { MTLLoader } from "three/addons/loaders/MTLLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+/* ================= Settings ================= */
+const TITLE      = "Scan Gallery";   // page heading
+const FOLDER     = "models";         // folder the gallery reads
+const REPO       = "";               // "owner/repo" — leave empty to work it out from the GitHub Pages address
+const BRANCH     = "main";
+const CACHE_MIN  = 5;                // reuse the file list for this many minutes (GitHub limits anonymous requests)
+const THUMB_PX   = 480;
+
+/* ================= Stage 1: Find the scans ================= */
+// Each .obj in the folder is one scan. A scan in its own sub-folder is titled by the folder;
+// a .mtl beside it (same name, or the only one in that folder) supplies colours and textures.
+function repoFromAddress() {
+  if (REPO) return REPO;
+  const m = location.hostname.match(/^([^.]+)\.github\.io$/i);
+  if (!m) return null;
+  const first = location.pathname.split("/").filter(Boolean)[0];
+  return `${m[1]}/${first || m[1] + ".github.io"}`;
+}
+
+async function listPaths() {
+  const repo = repoFromAddress();
+  const cacheKey = "scan-gallery:" + repo;
+  if (repo) {
+    try {
+      const c = JSON.parse(sessionStorage.getItem(cacheKey));
+      if (c && Date.now() - c.at < CACHE_MIN * 60000) return c.paths;
+    } catch {}
+    for (const branch of [BRANCH, "master"]) {
+      const r = await fetch(`https://api.github.com/repos/${repo}/git/trees/${branch}?recursive=1`);
+      if (r.status === 404) continue;
+      if (!r.ok) break;
+      const paths = (await r.json()).tree.filter(t => t.type === "blob").map(t => ({ path: t.path, size: t.size }));
+      try { sessionStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), paths })); } catch {}
+      return paths;
+    }
+  }
+  // Fallback (local testing, or if GitHub is unreachable): a hand-written models/index.json list
+  const r = await fetch(`${FOLDER}/index.json`, { cache: "no-store" });
+  if (!r.ok) throw new Error("no-list");
+  return (await r.json()).map(p => (typeof p === "string" ? { path: `${FOLDER}/${p}`, size: null } : p));
+}
+
+const pretty = s => s.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+const sizeText = b => b == null ? "" : b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+
+function toScans(paths) {
+  const inFolder = paths.filter(p => p.path.startsWith(FOLDER + "/"));
+  const scans = [];
+  for (const p of inFolder) {
+    if (!/\.obj$/i.test(p.path)) continue;
+    const parts = p.path.split("/");
+    const file = parts.pop(), dir = parts.join("/");
+    const sub = parts.length > 1 ? parts[parts.length - 1] : null;
+    const mtls = inFolder.filter(q => /\.mtl$/i.test(q.path) && q.path.slice(0, q.path.lastIndexOf("/")) === dir);
+    const same = mtls.find(q => q.path.toLowerCase() === p.path.toLowerCase().replace(/\.obj$/, ".mtl"));
+    const mtl = same || (sub && mtls.length === 1 ? mtls[0] : null);
+    const objsHere = inFolder.filter(q => /\.obj$/i.test(q.path) && q.path.startsWith(dir + "/") && !q.path.slice(dir.length + 1).includes("/"));
+    const title = sub && objsHere.length === 1 ? pretty(sub) : pretty(file);
+    scans.push({ title, dir, file, url: `${dir}/${file}`, mtl: mtl ? mtl.path.split("/").pop() : null, size: p.size, slug: (dir + "/" + file).toLowerCase().replace(/[^a-z0-9]+/g, "-") });
+  }
+  return scans.sort((a, b) => a.title.localeCompare(b.title, "en-GB"));
+}
+
+/* ================= Stage 2: Load and tidy a model ================= */
+// Centre it, scale it to a 2-unit box, give it a plain material if it has none, and keep vertex colours
+const enc = s => s.split("/").map(encodeURIComponent).join("/");
+async function loadModel(scan) {
+  const obj = new OBJLoader();
+  if (scan.mtl) {
+    try {
+      const mats = await new MTLLoader().setPath(enc(scan.dir) + "/").loadAsync(encodeURIComponent(scan.mtl));
+      mats.preload();
+      obj.setMaterials(mats);
+    } catch { /* missing or broken .mtl: carry on with plain material */ }
+  }
+  const root = scan.text ? obj.parse(scan.text) : await obj.loadAsync(enc(scan.url));
+  let verts = 0;
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const g = o.geometry;
+    verts += g.attributes.position.count;
+    if (!g.attributes.normal) g.computeVertexNormals();
+    const hasColour = !!g.attributes.color;            // many scanners store colour per point
+    if (hasColour) {
+      o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide });
+    } else if (!scan.mtl) {
+      o.material = new THREE.MeshStandardMaterial({ color: 0xd9d6d0, roughness: 0.8, side: THREE.DoubleSide });
+    } else {
+      for (const m of [].concat(o.material)) m.side = THREE.DoubleSide;   // keep the scan's own colours and textures
+    }
+  });
+  await texturesReady(root);
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3()), centre = box.getCenter(new THREE.Vector3());
+  const s = 2 / Math.max(size.x, size.y, size.z, 1e-6);
+  const holder = new THREE.Group();
+  root.position.copy(centre).multiplyScalar(-1);
+  const scaler = new THREE.Group(); scaler.scale.setScalar(s); scaler.add(root);
+  holder.add(scaler);
+  holder.userData = { verts, root };
+  return holder;
+}
+
+// Textures from a .mtl load in the background; wait for them (up to 10 s) so thumbnails aren't blank
+async function texturesReady(root) {
+  const maps = [];
+  root.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.map) maps.push(m.map); });
+  const ready = t => t.image && (t.image.width > 0 || t.image.naturalWidth > 0);
+  const start = performance.now();
+  while (maps.some(t => !ready(t)) && performance.now() - start < 10000) await new Promise(r => setTimeout(r, 100));
+}
+
+function dispose(group) {
+  group.traverse(o => {
+    if (!o.isMesh) return;
+    o.geometry.dispose();
+    for (const m of [].concat(o.material)) { m.map?.dispose(); m.dispose(); }
+  });
+}
+
+function lights(scene) {
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2e33, 1.6));
+  const key = new THREE.DirectionalLight(0xffffff, 2); key.position.set(3, 5, 4); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xffffff, 0.8); rim.position.set(-4, 2, -3); scene.add(rim);
+}
+
+/* ================= Stage 3: Thumbnails (one hidden renderer, one scan at a time, only when scrolled into view) ================= */
+const tRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+tRenderer.setSize(THUMB_PX, THUMB_PX, false);
+const tScene = new THREE.Scene(); lights(tScene);
+const tCam = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+tCam.position.set(3.4, 2.4, 5.6); tCam.lookAt(0, 0, 0);
+
+const queue = []; let busy = false;
+function queueThumb(scan, el) { queue.push({ scan, el }); pump(); }
+async function pump() {
+  if (busy || !queue.length) return;
+  busy = true;
+  const { scan, el } = queue.shift();
+  try {
+    const model = await loadModel(scan);
+    tScene.add(model);
+    tRenderer.render(tScene, tCam);
+    el.innerHTML = `<img alt="" src="${tRenderer.domElement.toDataURL("image/png")}">`;
+    tScene.remove(model); dispose(model);
+  } catch {
+    el.innerHTML = '<span class="state bad">Could not load</span>';
+  }
+  busy = false; pump();
+}
+const seen = new IntersectionObserver(entries => {
+  for (const e of entries) if (e.isIntersecting) { seen.unobserve(e.target); queueThumb(e.target._scan, e.target); }
+}, { rootMargin: "300px" });
+
+/* ================= Stage 4: Gallery ================= */
+function renderGrid(scans) {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  for (const scan of scans) {
+    const card = document.createElement("button");
+    card.className = "card";
+    card.innerHTML = `<div class="thumb"><span class="state">Loading</span></div><div class="cap"><b></b><span></span></div>`;
+    card.querySelector("b").textContent = scan.title;
+    card.querySelector(".cap span").textContent = [scan.file, sizeText(scan.size)].filter(Boolean).join(" · ");
+    card.onclick = () => openViewer(scan);
+    const thumb = card.querySelector(".thumb"); thumb._scan = scan; seen.observe(thumb);
+    grid.append(card);
+  }
+}
+
+/* ================= Stage 5: Viewer (orbit, turntable, up-axis switch, download) ================= */
+const vCanvas = document.getElementById("vCanvas");
+const vRenderer = new THREE.WebGLRenderer({ canvas: vCanvas, antialias: true });
+vRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+vRenderer.setClearColor(0x0f1112);
+const vScene = new THREE.Scene(); lights(vScene);
+const grid = new THREE.GridHelper(4, 16, 0x3a4046, 0x23282c); grid.position.y = -1.01; vScene.add(grid);
+const vCam = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
+const controls = new OrbitControls(vCam, vCanvas);
+controls.enableDamping = true; controls.autoRotateSpeed = 1.2;
+const V = { model: null, open: false, zUp: false, spin: true, token: 0 };
+
+function sizeViewer() {
+  const r = vCanvas.parentElement.getBoundingClientRect();
+  vRenderer.setSize(r.width, r.height, false);
+  vCam.aspect = r.width / Math.max(1, r.height); vCam.updateProjectionMatrix();
+}
+addEventListener("resize", () => V.open && sizeViewer());
+
+function applyUp() {
+  if (!V.model) return;
+  V.model.rotation.set(V.zUp ? -Math.PI / 2 : 0, 0, 0);
+  document.getElementById("upBtn").textContent = "Up: " + (V.zUp ? "Z" : "Y");
+}
+
+async function openViewer(scan) {
+  const token = ++V.token;
+  V.open = true;
+  document.getElementById("viewer").hidden = false;
+  document.body.style.overflow = "hidden";
+  document.getElementById("vTitle").textContent = scan.title;
+  document.getElementById("vInfo").textContent = sizeText(scan.size);
+  const dl = document.getElementById("dlBtn");
+  dl.hidden = !!scan.text; dl.href = scan.text ? "#" : enc(scan.url); dl.setAttribute("download", scan.file);
+  document.getElementById("vMsg").textContent = "Loading…";
+  if (!scan.text) history.replaceState(null, "", "#" + scan.slug);
+  sizeViewer();
+  vCam.position.set(3.4, 2, 5.2); controls.target.set(0, 0, 0); controls.update();
+  if (V.model) { vScene.remove(V.model); dispose(V.model); V.model = null; }
+  try {
+    const model = await loadModel(scan);
+    if (token !== V.token) { dispose(model); return; }
+    V.model = model; vScene.add(model); applyUp();
+    document.getElementById("vMsg").textContent = "";
+    document.getElementById("vInfo").textContent =
+      [model.userData.verts.toLocaleString("en-GB") + " points", sizeText(scan.size)].filter(Boolean).join(" · ");
+  } catch {
+    document.getElementById("vMsg").textContent = "This file could not be loaded";
+  }
+}
+
+function closeViewer() {
+  V.open = false; V.token++;
+  document.getElementById("viewer").hidden = true;
+  document.body.style.overflow = "";
+  history.replaceState(null, "", location.pathname + location.search);
+  if (V.model) { vScene.remove(V.model); dispose(V.model); V.model = null; }
+}
+
+function tick() {
+  if (V.open) { controls.autoRotate = V.spin; controls.update(); vRenderer.render(vScene, vCam); }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ================= Controls ================= */
+document.getElementById("closeBtn").onclick = closeViewer;
+addEventListener("keydown", e => { if (e.key === "Escape" && V.open) closeViewer(); });
+document.getElementById("upBtn").onclick = () => { V.zUp = !V.zUp; applyUp(); };
+document.getElementById("spinBtn").onclick = e => { V.spin = !V.spin; e.currentTarget.setAttribute("aria-pressed", String(V.spin)); };
+document.getElementById("howBtn").onclick = e => {
+  const how = document.getElementById("how"); how.hidden = !how.hidden;
+  e.currentTarget.setAttribute("aria-expanded", String(!how.hidden));
+};
+document.getElementById("checkBtn").onclick = () => document.getElementById("checkFile").click();
+document.getElementById("checkFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  openViewer({ title: pretty(f.name) + " (your file, not uploaded)", file: f.name, size: f.size, text: await f.text(), mtl: null });
+  e.target.value = "";
+};
+
+/* ================= Boot ================= */
+document.title = TITLE;
+document.getElementById("title").textContent = TITLE;
+(async () => {
+  const count = document.getElementById("count"), empty = document.getElementById("empty");
+  try {
+    const scans = toScans(await listPaths());
+    count.textContent = scans.length === 1 ? "1 scan" : `${scans.length} scans`;
+    if (!scans.length) {
+      empty.hidden = false;
+      empty.innerHTML = `<b>No scans yet.</b> Add an OBJ file to the <code>${FOLDER}</code> folder of this repository and it will appear here. Use "How to add a scan" above for the steps.`;
+      return;
+    }
+    renderGrid(scans);
+    const hash = location.hash.slice(1);
+    const hit = hash && scans.find(s => s.slug === hash);
+    if (hit) openViewer(hit);
+  } catch {
+    count.textContent = "Scans unavailable";
+    empty.hidden = false;
+    empty.innerHTML = `<b>The list of scans couldn't be loaded.</b> If this page is on GitHub Pages, wait a minute and reload: GitHub limits how often a page can ask for the file list. Otherwise check that the <code>${FOLDER}</code> folder exists.`;
+  }
+})();
+</script>
+</body>
+</html>
