@@ -79,9 +79,10 @@ main .wrap{padding-block:24px 48px}
       <h1 id="title">Scan Gallery</h1>
     </div>
     <div class="spacer"></div>
+    <a class="tool" href="prep.html" title="Make a heavy scan light enough for the gallery and the AR tools">Scan Prep</a>
     <button class="tool" id="howBtn" aria-expanded="false" aria-controls="how">How to add a scan</button>
-    <button class="tool" id="checkBtn" title="Open an OBJ or PLY from your computer to check it before uploading">Check my file</button>
-    <input type="file" id="checkFile" accept=".obj,.ply" hidden>
+    <button class="tool" id="checkBtn" title="Open an OBJ, PLY or GLB from your computer to check it before uploading">Check my file</button>
+    <input type="file" id="checkFile" accept=".obj,.ply,.glb" hidden>
   </div>
 </header>
 
@@ -89,7 +90,7 @@ main .wrap{padding-block:24px 48px}
   <div class="wrap">
     <h2>How to add a scan</h2>
     <ol>
-      <li>Export your scan as <b>OBJ</b> or <b>PLY</b>. If your app gives you an <code>.mtl</code> file and images with an OBJ, keep them together.</li>
+      <li>Export your scan as <b>GLB</b> (best: run it through Scan Prep first), <b>OBJ</b> or <b>PLY</b>. If your app gives you an <code>.mtl</code> file and images with an OBJ, keep them together.</li>
       <li>Name it <code>yourname-title</code>, e.g. <code>maya-stairwell.obj</code> or <code>maya-stairwell.ply</code>. Keep files under 25 MB each.</li>
       <li>Open the repository on GitHub, go into the <code>models</code> folder, then <b>Add file → Upload files</b>.
           For a scan with textures, put all its files in a new folder of their own, e.g. <code>models/maya-stairwell/</code>.</li>
@@ -128,6 +129,7 @@ import * as THREE from "three";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { MTLLoader } from "three/addons/loaders/MTLLoader.js";
 import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 /* ================= Settings ================= */
@@ -180,14 +182,14 @@ function toScans(paths) {
   const inFolder = paths.filter(p => p.path.startsWith(FOLDER + "/"));
   const scans = [];
   for (const p of inFolder) {
-    if (!/\.(obj|ply)$/i.test(p.path)) continue;          // one scan per .obj or .ply
+    if (!/\.(obj|ply|glb)$/i.test(p.path)) continue;          // one scan per .obj or .ply
     const parts = p.path.split("/");
     const file = parts.pop(), dir = parts.join("/");
     const sub = parts.length > 1 ? parts[parts.length - 1] : null;
     const mtls = inFolder.filter(q => /\.mtl$/i.test(q.path) && q.path.slice(0, q.path.lastIndexOf("/")) === dir);
     const same = mtls.find(q => q.path.toLowerCase() === p.path.toLowerCase().replace(/\.obj$/, ".mtl"));
     const mtl = /\.obj$/i.test(p.path) ? (same || (sub && mtls.length === 1 ? mtls[0] : null)) : null;
-    const objsHere = inFolder.filter(q => /\.(obj|ply)$/i.test(q.path) && q.path.startsWith(dir + "/") && !q.path.slice(dir.length + 1).includes("/"));
+    const objsHere = inFolder.filter(q => /\.(obj|ply|glb)$/i.test(q.path) && q.path.startsWith(dir + "/") && !q.path.slice(dir.length + 1).includes("/"));
     const title = sub && objsHere.length === 1 ? pretty(sub) : pretty(file);
     scans.push({ title, dir, file, url: `${dir}/${file}`, mtl: mtl ? mtl.path.split("/").pop() : null, size: p.size, slug: (dir + "/" + file).toLowerCase().replace(/[^a-z0-9]+/g, "-") });
   }
@@ -221,7 +223,10 @@ async function loadPly(scan) {
 }
 
 async function loadModel(scan) {
-  const root = /\.ply$/i.test(scan.file) ? await loadPly(scan) : await loadObj(scan);
+  const root = /\.ply$/i.test(scan.file) ? await loadPly(scan)
+    : /\.glb$/i.test(scan.file) ? (scan.buffer ? await new GLTFLoader().parseAsync(scan.buffer, "") : await new GLTFLoader().loadAsync(enc(scan.url))).scene
+    : await loadObj(scan);
+  root.userData.glb = /\.glb$/i.test(scan.file);
   return tidy(root, scan);
 }
 
@@ -240,7 +245,11 @@ async function loadObj(scan) {
 async function tidy(root, scan) {
   let verts = 0;
   root.traverse(o => {
-    if (o.isPoints) verts += o.geometry.attributes.position.count;
+    if (o.isPoints) {
+      verts += o.geometry.attributes.position.count;
+      const vc = !!o.geometry.attributes.color;
+      o.material = new THREE.PointsMaterial({ size: POINT_SIZE, sizeAttenuation: true, vertexColors: vc, color: vc ? 0xffffff : 0xd9d6d0 });
+    }
     if (!o.isMesh) return;
     const g = o.geometry;
     verts += g.attributes.position.count;
@@ -248,6 +257,8 @@ async function tidy(root, scan) {
     const hasColour = !!g.attributes.color;            // many scanners store colour per point
     if (hasColour) {
       o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide });
+    } else if (root.userData.glb) {
+      for (const m of [].concat(o.material)) m.side = THREE.DoubleSide;   // GLB brings its own materials
     } else if (!scan.mtl) {
       o.material = new THREE.MeshStandardMaterial({ color: 0xd9d6d0, roughness: 0.8, side: THREE.DoubleSide });
     } else {
@@ -411,9 +422,9 @@ document.getElementById("howBtn").onclick = e => {
 document.getElementById("checkBtn").onclick = () => document.getElementById("checkFile").click();
 document.getElementById("checkFile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  const ply = /\.ply$/i.test(f.name);
+  const binary = /\.(ply|glb)$/i.test(f.name);
   openViewer({ title: pretty(f.name) + " (your file, not uploaded)", file: f.name, size: f.size, mtl: null,
-    text: ply ? null : await f.text(), buffer: ply ? await f.arrayBuffer() : null });
+    text: binary ? null : await f.text(), buffer: binary ? await f.arrayBuffer() : null });
   e.target.value = "";
 };
 
@@ -427,7 +438,7 @@ document.getElementById("title").textContent = TITLE;
     count.textContent = scans.length === 1 ? "1 scan" : `${scans.length} scans`;
     if (!scans.length) {
       empty.hidden = false;
-      empty.innerHTML = `<b>No scans yet.</b> Add an OBJ or PLY file to the <code>${FOLDER}</code> folder of this repository and it will appear here. Use "How to add a scan" above for the steps.`;
+      empty.innerHTML = `<b>No scans yet.</b> Add a GLB, OBJ or PLY file to the <code>${FOLDER}</code> folder of this repository and it will appear here. Use "How to add a scan" above for the steps.`;
       return;
     }
     renderGrid(scans);
