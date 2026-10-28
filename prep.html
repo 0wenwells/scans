@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Scan Prep</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: settings column (left) + preview with before/after readout (right); stacks on narrow screens */
+:root{
+  --ground:#0f1112; --panel:#171a1c; --line:#2a2f33; --grid:#181c1f;
+  --ink:#e8eaec; --muted:#8a939b; --accent:#ffd400; --warn:#ffb020; --ok:#3ddc84;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--ground);color:var(--ink);font:14px/1.5 var(--sans);display:flex;flex-direction:column}
+[hidden]{display:none!important}
+button,input,select{font:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible,label.drop:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+h1{margin:0;font:600 18px/1.2 var(--sans)}
+.sub{color:var(--muted);font-size:13px}
+
+#main{flex:1;min-height:0;display:flex}
+#side{width:340px;flex:none;border-right:1px solid var(--line);background:var(--panel);overflow-y:auto;padding:16px;display:grid;gap:20px;align-content:start}
+.block{display:grid;gap:10px}
+h2{margin:0;font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+label.drop{display:grid;place-items:center;gap:6px;text-align:center;border:1px dashed var(--muted);padding:22px 14px;cursor:pointer;color:var(--muted)}
+label.drop b{color:var(--ink);font-weight:600}
+label.drop.over{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.files{font:400 11px/1.5 var(--mono);color:var(--muted);word-break:break-all}
+.seg{display:flex;flex-wrap:wrap}
+.seg button{flex:1;min-width:0;font:500 12px/1 var(--sans);color:var(--ink);background:transparent;border:1px solid var(--line);padding:9px 6px;cursor:pointer}
+.seg button + button{border-left:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.seg button small{display:block;font:400 10px/1.3 var(--mono);opacity:.7;margin-top:3px}
+.row{display:flex;gap:8px;align-items:center}
+.row input[type=number]{width:7ch;background:var(--ground);color:var(--ink);border:1px solid var(--line);padding:7px 8px;font:500 13px/1 var(--mono)}
+.row input[type=text]{flex:1;min-width:0;background:var(--ground);color:var(--ink);border:1px solid var(--line);padding:8px}
+.check{display:flex;gap:8px;align-items:center;font-size:13px}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+.note{margin:0;color:var(--muted);font-size:12px}
+button.primary{font:600 14px/1 var(--sans);color:#111;background:var(--accent);border:0;padding:12px 14px;cursor:pointer}
+button.primary:disabled{opacity:.4;cursor:default}
+button.tool{font:500 12px/1 var(--sans);color:var(--ink);background:transparent;border:1px solid var(--line);padding:9px 12px;cursor:pointer}
+button.tool[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+#log{font:400 11px/1.6 var(--mono);color:var(--muted);min-height:1.6em}
+#log .bad{color:var(--warn)} #log .good{color:var(--ok)}
+
+#view{position:relative;flex:1;min-width:0;display:flex;flex-direction:column}
+#vbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+#vbar .spacer{flex:1}
+#stage{position:relative;flex:1;min-height:0}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font:500 11px/1.6 var(--mono);letter-spacing:.08em;text-transform:uppercase;text-align:center;padding:16px;pointer-events:none}
+#stats{border-top:1px solid var(--line);overflow-x:auto}
+table{border-collapse:collapse;width:100%;font:400 12px/1 var(--mono);font-variant-numeric:tabular-nums}
+th,td{padding:9px 16px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left;color:var(--muted)}
+thead th{font:500 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+td.gain{color:var(--ok)}
+
+@media (max-width:820px){
+  #main{flex-direction:column}
+  #side{width:auto;border-right:0;border-bottom:1px solid var(--line)}
+  #view{min-height:70vh}
+}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+
+<header>
+  <h1>Scan Prep</h1>
+  <span class="sub">Turns heavy 3D scans into light GLB files for Face Mark, Shape Puppet, the card app and the scan gallery. Nothing is uploaded: it all happens on this computer.</span>
+</header>
+
+<div id="main">
+  <aside id="side">
+    <div class="block">
+      <h2>1 · Scan</h2>
+      <label class="drop" id="drop">
+        <b>Drop files or a folder here</b>
+        <span>OBJ (with its .mtl and images), PLY, GLB or a .zip</span>
+        <input type="file" id="pick" multiple accept=".obj,.mtl,.ply,.glb,.zip,.jpg,.jpeg,.png,.webp" hidden>
+      </label>
+      <div class="files" id="files"></div>
+    </div>
+
+    <div class="block">
+      <h2>2 · Detail</h2>
+      <div class="seg" id="detail" role="group" aria-label="Detail">
+        <button data-v="light" aria-pressed="true">Light<small id="dLight">50k</small></button>
+        <button data-v="medium" aria-pressed="false">Medium<small id="dMedium">200k</small></button>
+        <button data-v="high" aria-pressed="false">High<small id="dHigh">500k</small></button>
+        <button data-v="keep" aria-pressed="false">Keep<small>all</small></button>
+      </div>
+      <p class="note" id="detailNote">Triangles. Light suits phones and the card app; Medium suits laptops.</p>
+    </div>
+
+    <div class="block">
+      <h2>3 · Textures</h2>
+      <div class="seg" id="tex" role="group" aria-label="Texture size">
+        <button data-v="1024" aria-pressed="false">1K</button>
+        <button data-v="2048" aria-pressed="true">2K</button>
+        <button data-v="4096" aria-pressed="false">4K</button>
+        <button data-v="0" aria-pressed="false">Keep</button>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>4 · Orientation and size</h2>
+      <div class="seg" id="up" role="group" aria-label="Which way is up">
+        <button data-v="y" aria-pressed="true">Up is Y</button>
+        <button data-v="z" aria-pressed="false">Up is Z</button>
+      </div>
+      <div class="seg" id="origin" role="group" aria-label="Origin">
+        <button data-v="floor" aria-pressed="true">Stand on floor</button>
+        <button data-v="centre" aria-pressed="false">Centre</button>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="setH"> Set height to</label>
+        <input type="number" id="height" min="0.01" step="0.01" value="1.00" aria-label="Height in metres"><span class="note">m</span>
+      </div>
+      <p class="note">Most scanning apps save in metres. Use the preview's 1 m grid to check.</p>
+    </div>
+
+    <div class="block">
+      <h2>5 · Look</h2>
+      <div class="seg" id="look" role="group" aria-label="Look">
+        <button data-v="photo" aria-pressed="true">Photo<small>keeps scan lighting</small></button>
+        <button data-v="lit" aria-pressed="false">Lit<small>reacts to lights</small></button>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>6 · Save</h2>
+      <div class="row"><input type="text" id="name" value="scan" aria-label="File name"><span class="note">.glb</span></div>
+      <button class="primary" id="goBtn" disabled>Prepare</button>
+      <button class="tool" id="saveBtn" hidden>Download GLB</button>
+      <div id="log" aria-live="polite"></div>
+    </div>
+  </aside>
+
+  <section id="view">
+    <div id="vbar">
+      <div class="seg" role="group" aria-label="Show">
+        <button class="tool" id="showOrig" aria-pressed="true">Original</button>
+        <button class="tool" id="showPrep" aria-pressed="false" disabled>Prepared</button>
+      </div>
+      <button class="tool" id="wireBtn" aria-pressed="false">Wireframe</button>
+      <span class="spacer"></span>
+      <span class="note" id="dims"></span>
+    </div>
+    <div id="stage">
+      <canvas id="gl"></canvas>
+      <div id="empty">Drop a scan to begin</div>
+    </div>
+    <div id="stats">
+      <table>
+        <thead><tr><th></th><th>Original</th><th>Prepared</th><th>Change</th></tr></thead>
+        <tbody id="statRows">
+          <tr><td>Triangles</td><td id="sTriA">–</td><td id="sTriB">–</td><td id="sTriC"></td></tr>
+          <tr><td>Points</td><td id="sPtA">–</td><td id="sPtB">–</td><td id="sPtC"></td></tr>
+          <tr><td>Textures</td><td id="sTexA">–</td><td id="sTexB">–</td><td id="sTexC"></td></tr>
+          <tr><td>File size</td><td id="sSizeA">–</td><td id="sSizeB">–</td><td id="sSizeC"></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
+import { MTLLoader } from "three/addons/loaders/MTLLoader.js";
+import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { MeshoptSimplifier } from "https://cdn.jsdelivr.net/npm/meshoptimizer@1.3.0/meshopt_simplifier.js";
+import { unzipSync } from "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js";
+
+/* ================= Settings ================= */
+const TRI_TARGETS   = { light: 50_000, medium: 200_000, high: 500_000, keep: Infinity };
+const POINT_TARGETS = { light: 150_000, medium: 500_000, high: 1_500_000, keep: Infinity };
+const JPEG_QUALITY  = 0.85;
+
+/* ================= State ================= */
+const S = {
+  files: [],                 // [{name, blob}]
+  original: null,            // THREE.Group as loaded
+  prepared: null,            // THREE.Group after processing
+  glb: null,                 // ArrayBuffer of the prepared file
+  inputBytes: 0,
+  animated: false,
+  opts: { detail: "light", tex: 2048, up: "y", origin: "floor", look: "photo" },
+  show: "orig", wire: false,
+};
+const $ = id => document.getElementById(id);
+const fmt = n => n == null ? "–" : Math.round(n).toLocaleString("en-GB");
+const mb = b => b == null ? "–" : b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+const base = n => n.split(/[\\/]/).pop();
+const ext = n => (n.match(/\.([^.]+)$/) || [, ""])[1].toLowerCase();
+function log(msg, cls = "") { const d = document.createElement("div"); if (cls) d.className = cls; d.textContent = msg; $("log").append(d); }
+const tick = () => new Promise(r => setTimeout(r, 0));    // let the page repaint between heavy steps
+
+/* ================= Stage 1: Read files (loose files, folders or a zip) ================= */
+async function addFiles(list) {
+  const out = [];
+  for (const f of list) {
+    if (ext(f.name) === "zip") {
+      const z = unzipSync(new Uint8Array(await f.arrayBuffer()));
+      for (const [path, data] of Object.entries(z)) {
+        if (path.endsWith("/") || /(^|\/)(__MACOSX|\.)/.test(path)) continue;
+        out.push({ name: base(path), blob: new Blob([data]) });
+      }
+    } else out.push({ name: base(f.name), blob: f });
+  }
+  S.files = out;
+  S.inputBytes = out.filter(f => /^(obj|ply|glb|mtl|jpg|jpeg|png|webp)$/.test(ext(f.name))).reduce((s, f) => s + f.blob.size, 0);
+  $("files").textContent = out.map(f => `${f.name}  ${mb(f.blob.size)}`).join("\n");
+  const main = out.find(f => /^(obj|ply|glb)$/.test(ext(f.name)));
+  $("log").innerHTML = "";
+  if (!main) { log("No .obj, .ply or .glb found in what was dropped.", "bad"); return; }
+  $("name").value = main.name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9-_]+/gi, "-").toLowerCase() + "-prepped";
+  await loadOriginal(main);
+}
+
+async function readAllEntries(dirEntry) {     // folders dropped from the desktop
+  const files = [];
+  async function walk(entry) {
+    if (entry.isFile) files.push(await new Promise((res, rej) => entry.file(res, rej)));
+    else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      let batch;
+      do { batch = await new Promise((res, rej) => reader.readEntries(res, rej)); for (const e of batch) await walk(e); } while (batch.length);
+    }
+  }
+  await walk(dirEntry);
+  return files;
+}
+
+/* ================= Stage 2: Load ================= */
+function fileURLs() {
+  const map = {};
+  for (const f of S.files) map[f.name.toLowerCase()] = URL.createObjectURL(f.blob);
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier(url => map[decodeURIComponent(base(url)).toLowerCase()] || url);   // .mtl and .gltf point at images by name
+  return { map, manager };
+}
+
+async function loadOriginal(main) {
+  resetPrepared();
+  $("empty").textContent = "Loading…"; $("empty").hidden = false;
+  log(`Reading ${main.name} (${mb(main.blob.size)})…`);
+  await tick();
+  const { map, manager } = fileURLs();
+  let root;
+  try {
+    const kind = ext(main.name);
+    if (kind === "obj") {
+      const objLoader = new OBJLoader(manager);
+      const text = await main.blob.text();
+      const lib = (text.match(/^mtllib\s+(.+)$/m) || [])[1];
+      const mtlFile = S.files.find(f => lib && f.name.toLowerCase() === base(lib.trim()).toLowerCase())
+        || S.files.find(f => ext(f.name) === "mtl");
+      if (mtlFile) {
+        const mats = new MTLLoader(manager).parse(await mtlFile.blob.text(), "");
+        mats.preload(); objLoader.setMaterials(mats);
+        log(`Materials from ${mtlFile.name}`);
+      }
+      root = objLoader.parse(text);
+    } else if (kind === "ply") {
+      const loader = new PLYLoader();
+      loader.setCustomPropertyNameMapping({ f_dc: ["f_dc_0", "f_dc_1", "f_dc_2"] });
+      const g = loader.parse(await main.blob.arrayBuffer());
+      if (!g.attributes.color && g.attributes.f_dc) {           // Gaussian splat colour → plain colour
+        const f = g.attributes.f_dc.array, c = new Float32Array(f.length);
+        for (let i = 0; i < f.length; i++) c[i] = Math.min(1, Math.max(0, 0.5 + 0.28209479 * f[i]));
+        g.setAttribute("color", new THREE.BufferAttribute(c, 3));
+        log("Splat colour converted to plain colour");
+      }
+      for (const k of Object.keys(g.attributes)) if (!["position", "normal", "color", "uv"].includes(k)) g.deleteAttribute(k);
+      root = new THREE.Group();
+      root.add(g.index ? new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: !!g.attributes.color }))
+                       : new THREE.Points(g, new THREE.PointsMaterial({ size: 0.01, vertexColors: !!g.attributes.color })));
+    } else {
+      const gltf = await new GLTFLoader(manager).loadAsync(map[main.name.toLowerCase()]);
+      root = gltf.scene;
+      S.animated = gltf.animations.length > 0;
+      root.animations = gltf.animations;
+      if (S.animated) log("This file is animated: its shape is kept so the animation still works. Textures can still be reduced.", "bad");
+    }
+  } catch (err) {
+    $("empty").textContent = "Could not read this file";
+    log("Could not read the file: " + (err.message || err), "bad");
+    return;
+  }
+  await waitForTextures(root);
+  S.original = root;
+  const st = measure(root);
+  $("sTriA").textContent = fmt(st.tris); $("sPtA").textContent = fmt(st.points);
+  $("sTexA").textContent = st.texText; $("sSizeA").textContent = mb(S.inputBytes);
+  const pc = st.points > 0 && st.tris === 0;
+  $("dLight").textContent = pc ? "150k" : "50k"; $("dMedium").textContent = pc ? "500k" : "200k"; $("dHigh").textContent = pc ? "1.5M" : "500k";
+  $("detailNote").textContent = pc ? "Points. This scan is a point cloud (dots, no surface)." : "Triangles. Light suits phones and the card app; Medium suits laptops.";
+  log(`${fmt(st.tris)} triangles, ${fmt(st.points)} points, ${st.textures.length} texture(s)`);
+  $("empty").hidden = true;
+  $("goBtn").disabled = false;
+  showModel();
+}
+
+async function waitForTextures(root) {
+  const maps = [];
+  root.traverse(o => { if (o.material) for (const m of [].concat(o.material)) if (m.map) maps.push(m.map); });
+  const ready = t => t.image && (t.image.width > 0 || t.image.naturalWidth > 0);
+  const t0 = performance.now();
+  while (maps.some(t => !ready(t)) && performance.now() - t0 < 15000) await new Promise(r => setTimeout(r, 100));
+  const missing = maps.filter(t => !ready(t)).length;
+  if (missing) log(`${missing} texture image(s) could not be found. Drop the images together with the scan.`, "bad");
+}
+
+function measure(root) {
+  let tris = 0, points = 0; const textures = new Set();
+  root.traverse(o => {
+    const g = o.geometry; if (!g) return;
+    if (o.isPoints) points += g.attributes.position.count;
+    else if (o.isMesh) tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+    if (o.material) for (const m of [].concat(o.material)) if (m.map?.image) textures.add(m.map.image);
+  });
+  const list = [...textures];
+  const texText = list.length ? list.map(i => `${i.width}×${i.height}`).slice(0, 3).join(", ") + (list.length > 3 ? ` +${list.length - 3}` : "") : "none";
+  return { tris, points, textures: list, texText };
+}
+
+/* ================= Stage 3: Reduce (meshoptimizer; keeps UV and colour seams) ================= */
+function reduceMesh(geo, targetTris) {
+  geo = geo.clone();
+  for (const k of Object.keys(geo.attributes)) if (!["position", "uv", "color"].includes(k)) geo.deleteAttribute(k);
+  if (geo.attributes.color && geo.attributes.color.itemSize === 4) {        // drop alpha from colour to keep things simple
+    const c4 = geo.attributes.color, c3 = new Float32Array(c4.count * 3);
+    for (let i = 0; i < c4.count; i++) { c3[i * 3] = c4.getX(i); c3[i * 3 + 1] = c4.getY(i); c3[i * 3 + 2] = c4.getZ(i); }
+    geo.setAttribute("color", new THREE.BufferAttribute(c3, 3));
+  }
+  for (const k of Object.keys(geo.attributes)) if (geo.attributes[k].normalized || !(geo.attributes[k].array instanceof Float32Array)) {
+    const a = geo.attributes[k], f = new Float32Array(a.count * a.itemSize);
+    for (let i = 0; i < a.count; i++) for (let j = 0; j < a.itemSize; j++) f[i * a.itemSize + j] = a.getComponent(i, j);
+    geo.setAttribute(k, new THREE.BufferAttribute(f, a.itemSize));
+  }
+  geo = mergeVertices(geo, 1e-6);                                        // join shared corners so the mesh is connected
+  const pos = geo.attributes.position.array, idx = new Uint32Array(geo.index.array);
+  const currentTris = idx.length / 3;
+  if (targetTris >= currentTris) { geo.computeVertexNormals(); return geo; }
+
+  // Attributes the simplifier should try to preserve: UV (weight 1) and colour (weight 0.5)
+  const uv = geo.attributes.uv, col = geo.attributes.color;
+  const stride = (uv ? 2 : 0) + (col ? 3 : 0);
+  let result;
+  if (stride) {
+    const attrs = new Float32Array(geo.attributes.position.count * stride), weights = [];
+    if (uv) weights.push(1, 1); if (col) weights.push(0.5, 0.5, 0.5);
+    for (let i = 0; i < geo.attributes.position.count; i++) {
+      let o = i * stride;
+      if (uv) { attrs[o++] = uv.array[i * 2]; attrs[o++] = uv.array[i * 2 + 1]; }
+      if (col) { attrs[o++] = col.array[i * 3]; attrs[o++] = col.array[i * 3 + 1]; attrs[o++] = col.array[i * 3 + 2]; }
+    }
+    [result] = MeshoptSimplifier.simplifyWithAttributes(idx, pos, 3, attrs, stride, weights, null, targetTris * 3, 1);
+  } else {
+    [result] = MeshoptSimplifier.simplify(idx, pos, 3, targetTris * 3, 1);
+  }
+  return compact(geo, result);
+}
+
+// Keep only the vertices the reduced triangles still use
+function compact(geo, indices) {
+  const remap = new Int32Array(geo.attributes.position.count).fill(-1);
+  let n = 0;
+  for (let i = 0; i < indices.length; i++) if (remap[indices[i]] < 0) remap[indices[i]] = n++;
+  const out = new THREE.BufferGeometry();
+  for (const [k, a] of Object.entries(geo.attributes)) {
+    const arr = new Float32Array(n * a.itemSize);
+    for (let v = 0; v < remap.length; v++) if (remap[v] >= 0) for (let j = 0; j < a.itemSize; j++) arr[remap[v] * a.itemSize + j] = a.array[v * a.itemSize + j];
+    out.setAttribute(k, new THREE.BufferAttribute(arr, a.itemSize));
+  }
+  const newIdx = new Uint32Array(indices.length);
+  for (let i = 0; i < indices.length; i++) newIdx[i] = remap[indices[i]];
+  out.setIndex(new THREE.BufferAttribute(newIdx, 1));
+  out.computeVertexNormals();
+  return out;
+}
+
+function reducePoints(geo, target) {
+  const pos = geo.attributes.position, col = geo.attributes.color;
+  if (target >= pos.count) return geo.clone();
+  const p = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) { p[i * 3] = pos.getX(i); p[i * 3 + 1] = pos.getY(i); p[i * 3 + 2] = pos.getZ(i); }
+  let c = null;
+  if (col) { c = new Float32Array(col.count * 3); for (let i = 0; i < col.count; i++) { c[i * 3] = col.getX(i); c[i * 3 + 1] = col.getY(i); c[i * 3 + 2] = col.getZ(i); } }
+  const keep = c ? MeshoptSimplifier.simplifyPoints(p, 3, target, c, 3, 0.5) : MeshoptSimplifier.simplifyPoints(p, 3, target);
+  const out = new THREE.BufferGeometry();
+  const np = new Float32Array(keep.length * 3), nc = c ? new Float32Array(keep.length * 3) : null;
+  keep.forEach((k, i) => { for (let j = 0; j < 3; j++) { np[i * 3 + j] = p[k * 3 + j]; if (nc) nc[i * 3 + j] = c[k * 3 + j]; } });
+  out.setAttribute("position", new THREE.BufferAttribute(np, 3));
+  if (nc) out.setAttribute("color", new THREE.BufferAttribute(nc, 3));
+  return out;
+}
+
+/* ================= Stage 4: Textures (shrink and re-save as JPEG unless they need transparency) ================= */
+const texCache = new Map();
+function shrinkTexture(tex, maxPx) {
+  if (!tex?.image) return tex;
+  const key = tex.image;
+  if (texCache.has(key)) return texCache.get(key);
+  const img = tex.image, w = img.width || img.naturalWidth, h = img.height || img.naturalHeight;
+  const s = maxPx ? Math.min(1, maxPx / Math.max(w, h)) : 1;
+  const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
+  const g = c.getContext("2d"); g.drawImage(img, 0, 0, c.width, c.height);
+  let alpha = false;
+  const data = g.getImageData(0, 0, Math.min(c.width, 256), Math.min(c.height, 256)).data;
+  for (let i = 3; i < data.length; i += 4) if (data[i] < 250) { alpha = true; break; }
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT; t.colorSpace = THREE.SRGBColorSpace;
+  t.userData.mimeType = alpha ? "image/png" : "image/jpeg";
+  texCache.set(key, t);
+  return t;
+}
+
+function makeMaterial(src, hasColour, look) {
+  const map = src?.map ? shrinkTexture(src.map, S.opts.tex) : null;
+  const base = { map, vertexColors: hasColour, side: THREE.DoubleSide };
+  if (!map && !hasColour) base.color = src?.color ? src.color.clone() : new THREE.Color(0xd9d6d0);
+  if (src?.transparent || map?.userData.mimeType === "image/png") { base.transparent = !!src?.transparent; base.alphaTest = 0.5; }
+  return look === "photo" ? new THREE.MeshBasicMaterial(base) : new THREE.MeshStandardMaterial({ ...base, roughness: 0.85, metalness: 0 });
+}
+
+/* ================= Stage 5: Prepare (reduce, orient, size, place) ================= */
+async function prepare() {
+  $("goBtn").disabled = true; $("saveBtn").hidden = true;
+  log("Preparing…"); await tick();
+  await MeshoptSimplifier.ready;
+  texCache.clear();
+  const src = S.original;
+  src.updateMatrixWorld(true);
+  const out = new THREE.Group();
+  out.name = $("name").value || "scan";
+
+  if (S.animated) {
+    // Keep geometry and animation; only shrink textures
+    const copy = src.clone(true);
+    copy.traverse(o => { if (o.material) o.material = [].concat(o.material).map(m => { const n = m.clone(); if (n.map) n.map = shrinkTexture(n.map, S.opts.tex); return n; }); if (Array.isArray(o.material) && o.material.length === 1) o.material = o.material[0]; });
+    out.add(copy); out.animations = src.animations;
+  } else {
+    // Bake every part into world space, then reduce each in proportion to its share of the whole
+    const st = measure(src);
+    const triTarget = TRI_TARGETS[S.opts.detail], ptTarget = POINT_TARGETS[S.opts.detail];
+    const parts = [];
+    src.traverse(o => { if ((o.isMesh || o.isPoints) && o.geometry?.attributes.position) parts.push(o); });
+    for (const o of parts) {
+      let g = o.geometry.clone();
+      for (const [k, a] of Object.entries(g.attributes)) if (a.isInterleavedBufferAttribute) g.setAttribute(k, a.clone());   // unpack shared buffers
+      g.applyMatrix4(o.matrixWorld);
+      if (o.isPoints) {
+        const share = st.points ? g.attributes.position.count / st.points : 1;
+        const pts = new THREE.Points(reducePoints(g, Math.max(100, Math.floor(ptTarget * share))),
+          new THREE.PointsMaterial({ size: 0.01, vertexColors: !!g.attributes.color, color: g.attributes.color ? 0xffffff : 0xd9d6d0 }));
+        out.add(pts);
+        continue;
+      }
+      // Meshes with several materials are split into one piece per material
+      const mats = [].concat(o.material);
+      const groups = Array.isArray(o.material) && g.groups.length ? g.groups : [{ start: 0, count: g.index ? g.index.count : g.attributes.position.count, materialIndex: 0 }];
+      if (g.index) g = g.toNonIndexed();
+      for (const grp of groups) {
+        const piece = new THREE.BufferGeometry();
+        for (const [k, a] of Object.entries(g.attributes)) piece.setAttribute(k, new THREE.BufferAttribute(a.array.slice(grp.start * a.itemSize, (grp.start + grp.count) * a.itemSize), a.itemSize, a.normalized));
+        const tris = grp.count / 3;
+        const target = Math.max(4, Math.floor(triTarget * (st.tris ? tris / st.tris : 1)));
+        log(`Reducing ${fmt(tris)} → ${target === Infinity || target >= tris ? fmt(tris) : fmt(target)} triangles…`); await tick();
+        const reduced = reduceMesh(piece, target);
+        out.add(new THREE.Mesh(reduced, makeMaterial(mats[grp.materialIndex] || mats[0], !!reduced.attributes.color, S.opts.look)));
+      }
+    }
+  }
+
+  // Orientation, size and placement are baked into the file so every tool sees the same thing
+  if (S.opts.up === "z") out.rotation.x = -Math.PI / 2;
+  out.updateMatrixWorld(true);
+  let box = new THREE.Box3().setFromObject(out);
+  if ($("setH").checked) {
+    const h = Math.max(1e-6, box.max.y - box.min.y), want = Math.max(0.01, +$("height").value || 1);
+    out.scale.setScalar(want / h); out.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(out);
+  }
+  const c = box.getCenter(new THREE.Vector3());
+  out.position.sub(new THREE.Vector3(c.x, S.opts.origin === "floor" ? box.min.y : c.y, c.z));
+  if (!S.animated) {                                            // bake the transform into the geometry
+    out.updateMatrixWorld(true);
+    out.children.forEach(ch => { ch.geometry.applyMatrix4(out.matrixWorld); if (ch.geometry.attributes.normal) ch.geometry.computeVertexNormals(); });
+    out.position.set(0, 0, 0); out.rotation.set(0, 0, 0); out.scale.set(1, 1, 1);
+  }
+
+  log("Writing GLB…"); await tick();
+  const glb = await new GLTFExporter().parseAsync(out, { binary: true, animations: out.animations || [] });
+  S.prepared = out; S.glb = glb;
+
+  const a = measure(src), b = measure(out);
+  $("sTriB").textContent = fmt(b.tris); $("sPtB").textContent = fmt(b.points);
+  $("sTexB").textContent = b.texText; $("sSizeB").textContent = mb(glb.byteLength);
+  setChange("sTriC", a.tris, b.tris); setChange("sPtC", a.points, b.points); setChange("sSizeC", S.inputBytes, glb.byteLength);
+  log(`Done: ${mb(glb.byteLength)}`, "good");
+  $("saveBtn").hidden = false; $("goBtn").disabled = false;
+  $("showPrep").disabled = false; setShow("prep");
+}
+
+function setChange(id, a, b) {
+  const el = $(id);
+  if (!a || a === b) { el.textContent = ""; el.className = ""; return; }
+  el.textContent = (b < a ? "−" : "+") + Math.round(Math.abs(1 - b / a) * 100) + "%";
+  el.className = b < a ? "gain" : "";
+}
+
+/* ================= Stage 6: Preview ================= */
+const renderer = new THREE.WebGLRenderer({ canvas: $("gl"), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x0f1112);
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2e33, 1.6));
+const key = new THREE.DirectionalLight(0xffffff, 2); key.position.set(3, 5, 4); scene.add(key);
+const camera = new THREE.PerspectiveCamera(35, 1, 0.001, 1000);
+const controls = new OrbitControls(camera, $("gl"));
+controls.enableDamping = true;
+const grid = new THREE.GridHelper(10, 10, 0x4a5258, 0x262b2f);     // 1 m squares
+scene.add(grid);
+const holder = new THREE.Group(); scene.add(holder);
+
+function resize() {
+  const r = $("stage").getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / Math.max(1, r.height); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe($("stage"));
+
+function showModel() {
+  holder.clear();
+  let obj = S.show === "prep" && S.prepared ? S.prepared : S.original;
+  if (!obj) return;
+  // The original is shown with the same orientation and placement settings so the two compare directly
+  if (obj === S.original) {
+    const view = new THREE.Group(); view.add(obj);
+    view.rotation.x = S.opts.up === "z" ? -Math.PI / 2 : 0;
+    view.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(view), c = box.getCenter(new THREE.Vector3());
+    view.position.set(-c.x, S.opts.origin === "floor" ? -box.min.y : -c.y, -c.z);
+    if ($("setH").checked) { const s = (+$("height").value || 1) / Math.max(1e-6, box.max.y - box.min.y); view.scale.setScalar(s); view.position.multiplyScalar(s); }
+    obj = view;
+  }
+  holder.add(obj);
+  holder.traverse(o => { if (o.material) for (const m of [].concat(o.material)) if ("wireframe" in m) m.wireframe = S.wire; });
+  const box = new THREE.Box3().setFromObject(holder), size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  $("dims").textContent = `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m (W × H × D)`;
+  const r = Math.max(size.x, size.y, size.z, 0.01);
+  if (!showModel.framed) { camera.position.copy(mid).add(new THREE.Vector3(r * 1.2, r * 0.8, r * 1.8)); controls.target.copy(mid); showModel.framed = true; }
+  grid.scale.setScalar(r > 20 ? 10 : 1);
+}
+(function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+
+/* ================= Controls ================= */
+function segment(id, key, after) {
+  const btns = [...document.querySelectorAll(`#${id} button`)];
+  btns.forEach(b => b.onclick = () => {
+    S.opts[key] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v;
+    btns.forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    after?.();
+  });
+}
+const resetView = () => { showModel.framed = false; resetPrepared(); showModel(); };
+segment("detail", "detail", resetPrepared);
+segment("tex", "tex", resetPrepared);
+segment("up", "up", resetView);
+segment("origin", "origin", resetView);
+segment("look", "look", resetPrepared);
+$("setH").onchange = resetView; $("height").oninput = () => $("setH").checked && resetView();
+
+function resetPrepared() {
+  S.prepared = null; S.glb = null;
+  $("saveBtn").hidden = true; $("showPrep").disabled = true;
+  for (const id of ["sTriB", "sPtB", "sTexB", "sSizeB"]) $(id).textContent = "–";
+  for (const id of ["sTriC", "sPtC", "sTexC", "sSizeC"]) { $(id).textContent = ""; $(id).className = ""; }
+  if (S.show === "prep") setShow("orig");
+}
+function setShow(v) {
+  S.show = v;
+  $("showOrig").setAttribute("aria-pressed", String(v === "orig"));
+  $("showPrep").setAttribute("aria-pressed", String(v === "prep"));
+  showModel();
+}
+$("showOrig").onclick = () => setShow("orig");
+$("showPrep").onclick = () => setShow("prep");
+$("wireBtn").onclick = e => { S.wire = !S.wire; e.currentTarget.setAttribute("aria-pressed", String(S.wire)); showModel(); };
+$("goBtn").onclick = () => prepare().catch(err => { log("Something went wrong: " + (err.message || err), "bad"); $("goBtn").disabled = false; });
+$("saveBtn").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([S.glb], { type: "model/gltf-binary" }));
+  a.download = ($("name").value || "scan").replace(/\.glb$/i, "") + ".glb";
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+
+const drop = $("drop");
+$("pick").onchange = e => { if (e.target.files.length) { showModel.framed = false; addFiles([...e.target.files]); } e.target.value = ""; };
+// Files or folders can be dropped anywhere on the page
+addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+addEventListener("dragleave", e => { if (!e.relatedTarget) drop.classList.remove("over"); });
+addEventListener("drop", async e => {
+  e.preventDefault(); drop.classList.remove("over");
+  const items = [...(e.dataTransfer.items || [])].map(i => i.webkitGetAsEntry?.()).filter(Boolean);
+  let files = [];
+  if (items.length) for (const it of items) files.push(...(it.isDirectory ? await readAllEntries(it) : [await new Promise(r => it.file(r))]));
+  else files = [...e.dataTransfer.files];
+  showModel.framed = false;
+  addFiles(files);
+});
+</script>
+</body>
+</html>
